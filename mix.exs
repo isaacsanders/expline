@@ -31,17 +31,16 @@ defmodule Expline.Mixfile do
     A cubic spline interpolation library for Elixir.
 
     Includes a GenServer. All required Linear Algebra modules are built for the
-    library, but may be extracted individually.
+    library, but may be extracted into an independent package at some point.
     """
   end
 
   def package do
     [name: :expline,
-     files: ["lib", "priv", "mix.exs", "README*", "readme*", "LICENSE*", "license*"],
+     files: ["lib", "mix.exs", "README*", "LICENSE*"],
      licenses: ["MIT"],
      maintainers: ["Isaac Sanders"],
-     links: %{"GitHub" => "https://github.com/isaacsanders/expline",
-              "Documentation" => "http://hexdocs.pm/expline/"}]
+     links: %{"GitHub" => "https://github.com/isaacsanders/expline"}]
   end
 
   def dialyzer do
