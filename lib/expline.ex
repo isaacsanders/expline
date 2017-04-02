@@ -4,104 +4,76 @@ defmodule Expline do
 
   @moduledoc """
   `Expline` is a `GenServer` that wraps the `Expline.Spline` module. It builds
-  the `Expline.Spline` asynchronously in a `Task` after being supplied the input
-  parameters in `initialize/2`. After initializing, use the `interpolate/2` and
+  the `Expline.Spline` after being supplied the input parameters in `start/3` or
+  `start_link/3`. After initializing, use the `interpolate/2` and
   `interpolate/3` functions to find the corresponding points for each value you
-  wish to interpolate. If the server is not initialized, it will return an
-  error.
+  wish to interpolate.
 
   For more information regarding the mathematics and performance of the spline
   building, read the `Expline.Spline` module documentation.
   """
 
-  @typep initializing_state() :: {:initializing, Task.t}
-  @typep state() :: :uninitialized
-                  | initializing_state()
-                  | {:ready, Expline.Spline.t}
+  @typep state() :: Expline.Spline.t
 
-  @typedoc """
-  The point type used to initialize `Expline` and returned from `interpolate/2`
-  and `interpolate/3`.
+  @doc """
+  Builds a spline from the provided list of points and holds the state in a
+  process without links (outside of a supervision tree).
+
+  See `start_link/2` for more information.
   """
-  @type point() :: {float(), float()}
-
-  def init(_) do
-    {:ok, :uninitialized}
+  @spec start(list(Expline.Spline.point()), GenServer.options()) :: {:ok, pid()}
+                                                                  | {:error, {:already_started, pid()}}
+                                                                  | {:error, Expline.Spline.creation_error()}
+  def start(points, opts \\ []) do
+    GenServer.start(__MODULE__, [points], opts)
   end
 
   @doc """
-  Asynchronously starts a `Task` that builds the internal `Expline.Spline` from
-  a list of `t:point/0`.
+  Builds a spline from the provided list of points and holds the state in a
+  process linked to the current process.
 
-  This call will log warnings if the spline is being built or if the server is
-  ready.
+  This is often used to start the server process as part of a supervision tree.
 
-  In either case, it will proceed with the instruction and build a new spline
-  from the given parameters. In future releases, there may be options to
-  silence the logging or to ignore the initialization call if the proper
-  option is set, depending on the feedback from users.
+  ## Options and more information
+
+  See `GenServer.start_link/3` for more information.
   """
-
-  @spec initialize(GenServer.server(), list(point())) :: :ok
-  def initialize(server, points) when is_list(points) do
-    GenServer.cast(server, {:initialize, points})
+  @spec start_link(list(Expline.Spline.point()), GenServer.options()) :: {:ok, pid()}
+                                                                       | {:error, {:already_started, pid()}}
+                                                                       | {:error, Expline.Spline.creation_error()}
+  def start_link(points, opts \\ []) do
+    GenServer.start_link(__MODULE__, [points], opts)
   end
 
-  @spec handle_cast({:initialize, list(point())}, state()) ::
-    {:noreply, initializing_state()}
-  def handle_cast({:initialize, points}, old_state) do
-    case old_state do
-      :uninitialized ->
-        nil
-      {:initializing, task} ->
-        Logger.warn("Shutting down Expline initialization task to reinitialize with new initial parameters")
-        Task.shutdown(task, :brutal_kill)
-      {:ready, _spline} ->
-        Logger.warn("Initializing an Expline server that has already been initialized")
+  def init([list_of_points]) do
+    case Expline.Spline.from_points(list_of_points) do
+      {:ok, spline} ->
+        {:ok, spline}
+      {:error, reason} ->
+        {:stop, reason}
     end
-
-    new_state = {:initializing, Task.async(fn ->
-      {:ready_spline, Expline.Spline.from_points(points)}
-    end)}
-
-    {:noreply, new_state}
-  end
-
-  # When the initializing task finishes, it sends this message to the server.
-  def handle_info({_task_ref, {:ready_spline, spline}}, _state) do
-    {:noreply, {:ready, spline}}
-  end
-
-  # When the initializing task finishes, it sends this message to the server as
-  # it dies and cleans up.
-  def handle_info({:DOWN, _task_ref, :process, _pid, :normal}, state) do
-    {:noreply, state}
   end
 
   @doc """
-  Interpolate a `t:point/0` from its independent value.
+  Interpolate a `t:Expline.Spline.point/0` from its independent value.
 
-  When the server is uninitialized or building the spline, the return value
-  will be `{:error, :server_not_ready}`.
+  When an error arises with the interpolation, an error found in
+  `t:Expline.Spline.interpolation_error/0` will be returned.
   """
 
-  @spec interpolate(GenServer.server(), float(), timeout()) ::
-    {:ok, point()} |
-    {:error, :server_not_ready}
+  @spec interpolate(GenServer.server(), float(), timeout()) :: {:ok, Expline.Spline.point()}
+                                                             | {:error, Expline.Spline.interpolation_error()}
   def interpolate(server, x, timeout \\ 5000) when is_float(x) do
     GenServer.call(server, {:interpolate, x}, timeout)
   end
 
-  @spec handle_call({:interpolate, float()}, GenServer.from(), state()) ::
-    {:reply, {:ok, point()}, state()} |
-    {:reply, {:error, :server_not_ready}, state()}
-  def handle_call({:interpolate, x}, _from, state) do
-    case state do
-      {:ready, spline} ->
-        {:ok, y} = Expline.Spline.interpolate(spline, x)
-        {:reply, {:ok, {x, y}}, state}
-      _ ->
-        {:reply, {:error, :server_not_ready}, state}
+  @spec handle_call({:interpolate, Expline.Spline.dependent_value()}, GenServer.from(), state()) :: {:reply, {:ok, Expline.Spline.point()}, state()}
+  def handle_call({:interpolate, x}, _from, spline) do
+    case Expline.Spline.interpolate(spline, x) do
+      {:ok, y} ->
+        {:reply, {:ok, {x, y}}, spline}
+      {:error, reason} ->
+        {:reply, {:error, reason}, spline}
     end
   end
 end

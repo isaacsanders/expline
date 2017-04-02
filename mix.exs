@@ -9,31 +9,56 @@ defmodule Expline.Mixfile do
      start_permanent: Mix.env == :prod,
      deps: deps(),
 
+     # Hex parameters
+     description: description(),
+     package: package(),
+
+     # Type-checking flags
+     dialyzer: dialyzer(),
+
      # Generated documentation parameters
      name: "Expline",
      source_url: "https://github.com/isaacsanders/expline",
-     docs: [main: "Expline",
-            extras: ["README.md"]]]
+     docs: docs()]
   end
 
-  # Configuration for the OTP application
-  #
-  # Type "mix help compile.app" for more information
   def application do
-    # Specify extra applications you'll use from Erlang/Elixir
-    [extra_applications: [:logger]]
+    [extra_applications: []]
   end
 
-  # Dependencies can be Hex packages:
-  #
-  #   {:my_dep, "~> 0.3.0"}
-  #
-  # Or git/path repositories:
-  #
-  #   {:my_dep, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
-  #
-  # Type "mix help deps" for more examples and options
+  def description do
+    """
+    A cubic spline interpolation library for Elixir.
+
+    Includes a GenServer. All required Linear Algebra modules are built for the
+    library, but may be extracted individually.
+    """
+  end
+
+  def package do
+    [name: :expline,
+     files: ["lib", "priv", "mix.exs", "README*", "readme*", "LICENSE*", "license*"],
+     licenses: ["MIT"],
+     maintainers: ["Isaac Sanders"],
+     links: %{"GitHub" => "https://github.com/isaacsanders/expline",
+              "Documentation" => "http://hexdocs.pm/expline/"}]
+  end
+
+  def dialyzer do
+    [flags: [:error_handling, :no_behaviours, :no_contracts, :no_fail_call,
+      :no_fun_app, :no_improper_lists, :no_match, :no_missing_calls, :no_opaque,
+      :no_return, :no_undefined_callbacks, :no_unused, :race_conditions,
+      :underspecs, :unknown]]
+  end
+
+  def docs do
+    [main: "Expline",
+     extras: ["README.md"]]
+  end
+
   defp deps do
-    [{:ex_doc, "~> 0.14", only: :dev, runtime: false}]
+    [{:ex_doc,   "~> 0.14", only: :dev, runtime: false},
+     {:dialyxir, "~> 0.5",  only: :dev, runtime: false},
+     {:quixir,   "~> 0.9",  only: :test }]
   end
 end
