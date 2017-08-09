@@ -324,6 +324,61 @@ defmodule Expline.Spline do
     end
   end
 
+  @doc """
+  Interpolate a curvature from the spline.
+
+  ## Examples
+
+      iex> with {:ok, spline} <- Expline.Spline.from_points([{0.0, 0.0}, {1.0, 1.0}, {2.0, 2.0}]),
+      ...> do: Expline.Spline.interpolate_curvature(spline, 0.5)
+      {:ok, 1.0}
+  """
+  @spec interpolate_curvature(t(), independent_value()) :: {:ok, curvature()}
+                                                         | {:error, interpolation_error()}
+                                                         | {:error, :corrupt_spline}
+  def interpolate_curvature(%__MODULE__{} = spline, x) when is_float(x) do
+    with :error <- Map.fetch(spline.derivatives, x) do
+      case :ordsets.filter(fn ({x1, x2}) -> x1 < x and x < x2 end, spline.ranges) do
+        [{_x1, _x2} = range] ->
+          do_interpolate_curvature(spline, range, x)
+        [] ->
+          extrapolate_curvature(spline, x)
+        _ranges ->
+          {:error, :corrupt_spline}
+      end
+    end
+  end
+
+  @spec do_interpolate_curvature(t(), range(), independent_value()) :: {:ok, dependent_value()}
+  defp do_interpolate_curvature(%__MODULE__{} = spline, {x1, x2}, x) do
+    y1 = Map.get(spline.points, x1)
+    y2 = Map.get(spline.points, x2)
+
+    k1 = Map.get(spline.derivatives, x1)
+    k2 = Map.get(spline.derivatives, x2)
+
+    # Described by equations (1), (2), (3), and (4) on
+    # https://en.wikipedia.org/wiki/Spline_interpolation
+    t = (x - x1) / (x2 - x1)
+    a = k1 * (x2 - x1) - (y2 - y1)
+    b = -k2 * (x2 - x1) + (y2 - y1)
+
+    dy = ((y2 - y1) + (1 - 2 * t) * (a * (1 - t) + b * t) + t * (1 - t) * (b - a)) / (x2 - x1)
+    {:ok, dy}
+  end
+
+  @spec extrapolate_curvature(t(), independent_value()) :: {:ok, dependent_value()}
+                                                         | {:error, :corrupt_extrema}
+  defp extrapolate_curvature(spline, x) do
+    cond do
+      spline.min > x ->
+        {:ok, Map.get(spline.derivatives, spline.min)}
+      spline.max < x ->
+        {:ok, Map.get(spline.derivatives, spline.max)}
+      true -> {:error, :corrupt_extrema}
+    end
+  end
+
   @spec make_derivatives(%{ required(independent_value()) => dependent_value() }) :: %{ required(independent_value()) => curvature() }
   defp make_derivatives(points) do
     n = map_size(points) - 1
