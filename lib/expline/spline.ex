@@ -1,5 +1,3 @@
-require IEx
-
 defmodule Expline.Spline do
   alias Expline.Matrix
   alias Expline.Vector
@@ -52,11 +50,13 @@ defmodule Expline.Spline do
   """
 
   @typedoc "The Expline's internal representation of a cubic spline"
-  @opaque t :: %__MODULE__{ min: independent_value(),
-                            max: independent_value(),
-                            ranges: :ordsets.ordset(range()),
-                            points: %{ required(independent_value()) => dependent_value() },
-                            derivatives: %{ required(independent_value()) => curvature() } }
+  @opaque t :: %__MODULE__{
+            min: independent_value(),
+            max: independent_value(),
+            ranges: :ordsets.ordset(range()),
+            points: %{required(independent_value()) => dependent_value()},
+            derivatives: %{required(independent_value()) => curvature()}
+          }
 
   @typedoc """
   The method by which a spline's end conditions are evaluated.
@@ -70,10 +70,8 @@ defmodule Expline.Spline do
   """
   @type extrapolation_method :: :natural_spline
 
-  @enforce_keys [ :min, :max, :ranges, :points,
-                  :derivatives, :extrapolation_method ]
-  defstruct [ :min, :max, :ranges, :points,
-              :derivatives, :extrapolation_method ]
+  @enforce_keys [:min, :max, :ranges, :points, :derivatives, :extrapolation_method]
+  defstruct [:min, :max, :ranges, :points, :derivatives, :extrapolation_method]
 
   @typedoc """
   The type used to denote a value that is independent and may be used to
@@ -122,9 +120,9 @@ defmodule Expline.Spline do
   are too close before input are both straightforward examples of mitigation
   strategies.
   """
-  @type creation_error() :: :too_few_points
-                          | {:range_too_small, point(), point()}
-
+  @type creation_error() ::
+          :too_few_points
+          | {:range_too_small, point(), point()}
 
   @typedoc """
   The errors that can arise from improper input to `interpolate/2`.
@@ -139,8 +137,9 @@ defmodule Expline.Spline do
   [bug report](https://github.com/isaacsanders/expline/issues)
   may be needed, as in normal operation, neither should occur.
   """
-  @type interpolation_error() :: :corrupt_extrema
-                               | :corrupt_spline
+  @type interpolation_error() ::
+          :corrupt_extrema
+          | :corrupt_spline
 
   @doc """
   Create a spline from a list of floating point pairs (tuples).
@@ -196,16 +195,15 @@ defmodule Expline.Spline do
                             ranges: [{0.0, 1.0}, {1.0, 2.0}]}}
   """
 
-  @spec from_points(list(point())) :: {:ok, t()}
-                                    | {:error, creation_error()}
+  @spec from_points(list(point())) ::
+          {:ok, t()}
+          | {:error, creation_error()}
   def from_points(list_of_points) when length(list_of_points) >= 3 do
     points = Map.new(list_of_points)
 
-    xs = points
-          |> Map.keys
+    xs = Map.keys(points)
 
-    min = xs |> Enum.min
-    max = xs |> Enum.max
+    {min, max} = Enum.min_max(xs)
     ranges = make_ranges(xs)
 
     case Enum.find(ranges, &range_too_small?/1) do
@@ -213,27 +211,32 @@ defmodule Expline.Spline do
         y1 = Map.get(points, x1)
         y2 = Map.get(points, x2)
         {:error, {:range_too_small, {x1, y1}, {x2, y2}}}
+
       nil ->
         derivatives = make_derivatives(points)
 
-        spline = %__MODULE__{ min: min,
-                              max: max,
-                              ranges: :ordsets.from_list(ranges),
-                              points: points,
-                              derivatives: derivatives,
-                              extrapolation_method: :natural_spline }
+        spline = %__MODULE__{
+          min: min,
+          max: max,
+          ranges: :ordsets.from_list(ranges),
+          points: points,
+          derivatives: derivatives,
+          extrapolation_method: :natural_spline
+        }
+
         {:ok, spline}
     end
   end
+
   def from_points(list_of_points) when length(list_of_points) < 3,
-  do: {:error, :too_few_points}
+    do: {:error, :too_few_points}
 
   @spec make_ranges(list(independent_value())) :: list(range())
   defp make_ranges(xs) do
     xs
-    |> Enum.sort
-    |> Enum.chunk(2, 1)
-    |> Enum.map(fn ([x1, x2]) -> {x1, x2} end)
+    |> Enum.sort()
+    |> Enum.chunk_every(2, 1, :discard)
+    |> Enum.map(&List.to_tuple/1)
   end
 
   @spec range_too_small?(range()) :: boolean()
@@ -272,16 +275,19 @@ defmodule Expline.Spline do
       ...> do: Expline.Spline.interpolate(spline, 2.5)
       {:ok, 2.5}
   """
-  @spec interpolate(t(), independent_value()) :: {:ok, dependent_value()}
-                                               | {:error, interpolation_error()}
-                                               | {:error, :corrupt_spline}
+  @spec interpolate(t(), independent_value()) ::
+          {:ok, dependent_value()}
+          | {:error, interpolation_error()}
+          | {:error, :corrupt_spline}
   def interpolate(%__MODULE__{} = spline, x) when is_float(x) do
     with :error <- Map.fetch(spline.points, x) do
-      case :ordsets.filter(fn ({x1, x2}) -> x1 < x and x < x2 end, spline.ranges) do
+      case :ordsets.filter(fn {x1, x2} -> x1 < x and x < x2 end, spline.ranges) do
         [{_x1, _x2} = range] ->
           do_interpolate(spline, range, x)
+
         [] ->
           extrapolate(spline, x)
+
         _ranges ->
           {:error, :corrupt_spline}
       end
@@ -306,8 +312,9 @@ defmodule Expline.Spline do
     {:ok, y}
   end
 
-  @spec extrapolate(t(), independent_value()) :: {:ok, dependent_value()}
-                                               | {:error, :corrupt_extrema}
+  @spec extrapolate(t(), independent_value()) ::
+          {:ok, dependent_value()}
+          | {:error, :corrupt_extrema}
   defp extrapolate(spline, x) do
     cond do
       spline.min > x ->
@@ -315,73 +322,96 @@ defmodule Expline.Spline do
         min_y = Map.get(spline.points, spline.min)
         y = (x - spline.min) * min_curvature + min_y
         {:ok, y}
+
       spline.max < x ->
         max_curvature = Map.get(spline.derivatives, spline.max)
         max_y = Map.get(spline.points, spline.max)
         y = (x - spline.max) * max_curvature + max_y
         {:ok, y}
-      true -> {:error, :corrupt_extrema}
+
+      true ->
+        {:error, :corrupt_extrema}
     end
   end
 
-  @spec make_derivatives(%{ required(independent_value()) => dependent_value() }) :: %{ required(independent_value()) => curvature() }
+  @spec make_derivatives(%{required(independent_value()) => dependent_value()}) :: %{
+          required(independent_value()) => curvature()
+        }
   defp make_derivatives(points) do
     n = map_size(points) - 1
 
-    xs = points
-          |> Map.keys
-          |> Enum.sort
+    xs =
+      points
+      |> Map.keys()
+      |> Enum.sort()
 
     [x0, x1] = Enum.take(xs, 2)
-    [y0, y1] = Enum.take(xs, 2) |> Enum.map(&(Map.get(points, &1)))
+    [y0, y1] = Enum.take(xs, 2) |> Enum.map(&Map.get(points, &1))
 
     [xn_1, xn] = Enum.drop(xs, n - 1)
-    [yn_1, yn] = Enum.drop(xs, n - 1) |> Enum.map(&(Map.get(points, &1)))
+    [yn_1, yn] = Enum.drop(xs, n - 1) |> Enum.map(&Map.get(points, &1))
 
     # Described by equations (15), (16), and (17) on
     # https://en.wikipedia.org/wiki/Spline_interpolation
-    system_of_eqns = Expline.Matrix.construct(n + 1, n + 2, fn
-       # first row
-       (0, 0)                 -> 2 / (x1 - x0)
-       (0, 1)                 -> 1 / (x1 - x0)
-       # =
-       (0, j) when j == n + 1 -> 3.0 * ((y1 - y0) / :math.pow(x1 - x0, 2))
+    system_of_eqns =
+      Expline.Matrix.construct(n + 1, n + 2, fn
+        # first row
+        0, 0 ->
+          2 / (x1 - x0)
 
-       # last row
-       (^n, j) when j == n - 1 -> 1 / (xn - xn_1)
-       (^n, ^n)                -> 2 / (xn - xn_1)
-       # =
-       (^n, j) when j == n + 1 -> 3.0 * ((yn - yn_1) / :math.pow(xn - xn_1, 2))
+        0, 1 ->
+          1 / (x1 - x0)
 
-       # middle rows
-       (i, j) when j == i - 1 ->
-         [xi_1, xi] = Enum.map(-1..0, fn (offset) -> Enum.at(xs, i + offset) end)
-         1.0 / (xi - xi_1)
-       (i, i) ->
-         [xi_1, xi, xi1] = Enum.map(-1..1, fn (offset) -> Enum.at(xs, i + offset) end)
-         2.0 * ((1.0 / (xi - xi_1)) + (1.0 / (xi1 - xi)))
-       (i, j) when j == i + 1 ->
-         [xi, xi1] = Enum.map(0..1, fn (offset) -> Enum.at(xs, i + offset) end)
-         1.0 / (xi1 - xi)
-       # =
-       (i, j) when j == n + 1 ->
-         [xi_1, xi, xi1] = Enum.map(-1..1, fn (offset) -> Enum.at(xs, i + offset) end)
-         [yi_1, yi, yi1] = [xi_1, xi, xi1]
-                            |> Enum.map(&(Map.get(points, &1)))
-         3.0 * (
-           ((yi - yi_1) / :math.pow(xi - xi_1, 2)) +
-           ((yi1 - yi) / :math.pow(xi1 - xi, 2))
-         )
+        # =
+        0, j when j == n + 1 ->
+          3.0 * ((y1 - y0) / :math.pow(x1 - x0, 2))
 
-       # empty terms
-       (_i, _j) -> 0.0
-    end)
+        # last row
+        ^n, j when j == n - 1 ->
+          1 / (xn - xn_1)
 
-    with {:ok, {matrix, vector}}  <- Matrix.disaugment(system_of_eqns),
-         {:ok, l}                 <- Matrix.cholesky_decomposition(matrix),
-         {:ok, y}                 <- Matrix.forward_substitution(l, vector),
-         {:ok, derivative_vector} <- l |> Matrix.transpose |> Matrix.backward_substitution(y) do
-      Enum.zip(xs, Vector.to_list(derivative_vector)) |> Map.new
+        ^n, ^n ->
+          2 / (xn - xn_1)
+
+        # =
+        ^n, j when j == n + 1 ->
+          3.0 * ((yn - yn_1) / :math.pow(xn - xn_1, 2))
+
+        # middle rows
+        i, j when j == i - 1 ->
+          [xi_1, xi] = Enum.map(-1..0, fn offset -> Enum.at(xs, i + offset) end)
+          1.0 / (xi - xi_1)
+
+        i, i ->
+          [xi_1, xi, xi1] = Enum.map(-1..1, fn offset -> Enum.at(xs, i + offset) end)
+          2.0 * (1.0 / (xi - xi_1) + 1.0 / (xi1 - xi))
+
+        i, j when j == i + 1 ->
+          [xi, xi1] = Enum.map(0..1, fn offset -> Enum.at(xs, i + offset) end)
+          1.0 / (xi1 - xi)
+
+        # =
+        i, j when j == n + 1 ->
+          [xi_1, xi, xi1] = Enum.map(-1..1, fn offset -> Enum.at(xs, i + offset) end)
+
+          [yi_1, yi, yi1] =
+            [xi_1, xi, xi1]
+            |> Enum.map(&Map.get(points, &1))
+
+          3.0 *
+            ((yi - yi_1) / :math.pow(xi - xi_1, 2) +
+               (yi1 - yi) / :math.pow(xi1 - xi, 2))
+
+        # empty terms
+        _i, _j ->
+          0.0
+      end)
+
+    with {:ok, {matrix, vector}} <- Matrix.disaugment(system_of_eqns),
+         {:ok, l} <- Matrix.cholesky_decomposition(matrix),
+         {:ok, y} <- Matrix.forward_substitution(l, vector),
+         {:ok, derivative_vector} <- l |> Matrix.transpose() |> Matrix.backward_substitution(y) do
+      Enum.zip(xs, Vector.to_list(derivative_vector)) |> Map.new()
     end
   end
 end
