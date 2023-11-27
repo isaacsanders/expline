@@ -114,7 +114,8 @@ defmodule Expline.Matrix do
       at(matrix, i, j)
     end
     |> Enum.all?(fn
-      0.0 -> true
+      +0.0 -> true
+      -0.0 -> true
       _ -> false
     end)
   end
@@ -125,7 +126,8 @@ defmodule Expline.Matrix do
       at(matrix, i, j)
     end
     |> Enum.all?(fn
-      0.0 -> true
+      +0.0 -> true
+      -0.0 -> true
       _ -> false
     end)
   end

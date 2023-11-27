@@ -334,6 +334,68 @@ defmodule Expline.Spline do
     end
   end
 
+  @doc """
+  Interpolate a curvature from the spline.
+
+  ## Examples
+
+      iex> with {:ok, spline} <- Expline.Spline.from_points([{0.0, 0.0}, {1.0, 1.0}, {2.0, 2.0}]),
+      ...> do: Expline.Spline.interpolate_curvature(spline, 0.5)
+      {:ok, 1.0}
+  """
+  @spec interpolate_curvature(t(), independent_value()) ::
+          {:ok, curvature()}
+          | {:error, interpolation_error()}
+          | {:error, :corrupt_spline}
+  def interpolate_curvature(%__MODULE__{} = spline, x) when is_float(x) do
+    with :error <- Map.fetch(spline.derivatives, x) do
+      case :ordsets.filter(fn {x1, x2} -> x1 < x and x < x2 end, spline.ranges) do
+        [{_x1, _x2} = range] ->
+          do_interpolate_curvature(spline, range, x)
+
+        [] ->
+          extrapolate_curvature(spline, x)
+
+        _ranges ->
+          {:error, :corrupt_spline}
+      end
+    end
+  end
+
+  @spec do_interpolate_curvature(t(), range(), independent_value()) :: {:ok, dependent_value()}
+  defp do_interpolate_curvature(%__MODULE__{} = spline, {x1, x2}, x) do
+    y1 = Map.get(spline.points, x1)
+    y2 = Map.get(spline.points, x2)
+
+    k1 = Map.get(spline.derivatives, x1)
+    k2 = Map.get(spline.derivatives, x2)
+
+    # Described by equations (1), (2), (3), and (4) on
+    # https://en.wikipedia.org/wiki/Spline_interpolation
+    t = (x - x1) / (x2 - x1)
+    a = k1 * (x2 - x1) - (y2 - y1)
+    b = -k2 * (x2 - x1) + (y2 - y1)
+
+    dy = (y2 - y1 + (1 - 2 * t) * (a * (1 - t) + b * t) + t * (1 - t) * (b - a)) / (x2 - x1)
+    {:ok, dy}
+  end
+
+  @spec extrapolate_curvature(t(), independent_value()) ::
+          {:ok, dependent_value()}
+          | {:error, :corrupt_extrema}
+  defp extrapolate_curvature(spline, x) do
+    cond do
+      spline.min > x ->
+        {:ok, Map.get(spline.derivatives, spline.min)}
+
+      spline.max < x ->
+        {:ok, Map.get(spline.derivatives, spline.max)}
+
+      true ->
+        {:error, :corrupt_extrema}
+    end
+  end
+
   @spec make_derivatives(%{required(independent_value()) => dependent_value()}) :: %{
           required(independent_value()) => curvature()
         }
@@ -357,38 +419,38 @@ defmodule Expline.Spline do
       Expline.Matrix.construct(n + 1, n + 2, fn
         # first row
         0, 0 ->
-          2 / (x1 - x0)
+          2 / subtract(x1, x0)
 
         0, 1 ->
-          1 / (x1 - x0)
+          1 / subtract(x1, x0)
 
         # =
         0, j when j == n + 1 ->
-          3.0 * ((y1 - y0) / :math.pow(x1 - x0, 2))
+          3.0 * (subtract(y1, y0) / :math.pow(subtract(x1, x0), 2))
 
         # last row
         ^n, j when j == n - 1 ->
-          1 / (xn - xn_1)
+          1 / subtract(xn, xn_1)
 
         ^n, ^n ->
-          2 / (xn - xn_1)
+          2 / subtract(xn, xn_1)
 
         # =
         ^n, j when j == n + 1 ->
-          3.0 * ((yn - yn_1) / :math.pow(xn - xn_1, 2))
+          3.0 * (subtract(yn, yn_1) / :math.pow(subtract(xn, xn_1), 2))
 
         # middle rows
         i, j when j == i - 1 ->
           [xi_1, xi] = Enum.map(-1..0, fn offset -> Enum.at(xs, i + offset) end)
-          1.0 / (xi - xi_1)
+          1.0 / subtract(xi, xi_1)
 
         i, i ->
           [xi_1, xi, xi1] = Enum.map(-1..1, fn offset -> Enum.at(xs, i + offset) end)
-          2.0 * (1.0 / (xi - xi_1) + 1.0 / (xi1 - xi))
+          2.0 * (1.0 / subtract(xi, xi_1) + 1.0 / subtract(xi1, xi))
 
         i, j when j == i + 1 ->
           [xi, xi1] = Enum.map(0..1, fn offset -> Enum.at(xs, i + offset) end)
-          1.0 / (xi1 - xi)
+          1.0 / subtract(xi1, xi)
 
         # =
         i, j when j == n + 1 ->
@@ -399,8 +461,8 @@ defmodule Expline.Spline do
             |> Enum.map(&Map.get(points, &1))
 
           3.0 *
-            ((yi - yi_1) / :math.pow(xi - xi_1, 2) +
-               (yi1 - yi) / :math.pow(xi1 - xi, 2))
+            (subtract(yi, yi_1) / :math.pow(subtract(xi, xi_1), 2) +
+               subtract(yi1, yi) / :math.pow(subtract(xi1, xi), 2))
 
         # empty terms
         _i, _j ->
@@ -414,4 +476,9 @@ defmodule Expline.Spline do
       Enum.zip(xs, Vector.to_list(derivative_vector)) |> Map.new()
     end
   end
+
+  @spec subtract(minuend :: nil | number(), subtrahend :: nil | number()) :: number()
+  defp subtract(nil, _), do: 0.0
+  defp subtract(_, nil), do: 0.0
+  defp subtract(minuend, subtrahend), do: minuend - subtrahend
 end

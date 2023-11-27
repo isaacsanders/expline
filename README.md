@@ -9,7 +9,7 @@ by adding `expline` to your list of dependencies in `mix.exs`:
 
 ```elixir
 def deps do
-  [{:expline, "~> 0.1.0"}]
+  [{:expline, "~> 0.2"}]
 end
 ```
 

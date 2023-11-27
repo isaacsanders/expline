@@ -1,8 +1,8 @@
 defmodule Expline.Mixfile do
   use Mix.Project
 
-  @app :expline
-  @version "0.2.0"
+  @app :explinex
+  @version "0.2.4"
 
   def project do
     [
@@ -22,7 +22,7 @@ defmodule Expline.Mixfile do
 
       # Generated documentation parameters
       name: "Expline",
-      source_url: "https://github.com/isaacsanders/#{@app}",
+      source_url: "https://github.com/am-kantox/#{@app}",
       docs: docs()
     ]
   end
@@ -42,34 +42,17 @@ defmodule Expline.Mixfile do
 
   def package do
     [
-      name: :expline,
+      organization: "kantox",
+      name: @app,
       files: ["lib", "mix.exs", "README*", "LICENSE*"],
       licenses: ["MIT"],
-      maintainers: ["Isaac Sanders"],
-      links: %{"GitHub" => "https://github.com/isaacsanders/#{@app}"}
+      maintainers: ["Isaac Sanders", "Aleksei Matiushkin"],
+      links: %{"GitHub" => "https://github.com/am-kantox/#{@app}"}
     ]
   end
 
   def dialyzer do
-    [
-      flags: [
-        :error_handling,
-        :no_behaviours,
-        :no_contracts,
-        :no_fail_call,
-        :no_fun_app,
-        :no_improper_lists,
-        :no_match,
-        :no_missing_calls,
-        :no_opaque,
-        :no_return,
-        :no_undefined_callbacks,
-        :no_unused,
-        :race_conditions,
-        :underspecs,
-        :unknown
-      ]
-    ]
+    []
   end
 
   def docs do
